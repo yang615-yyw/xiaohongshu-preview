@@ -467,6 +467,1464 @@ function compressImage(file){
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = function(){
+      // 检测图片尺寸是否有效
+      if(img.width === 0 || img.height === 0){
+        URL.revokeObjectURL(url);
+        reject(new Error('图片尺寸无效(0x0)'));
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const MAX_W = 1200;
+      let w = img.width, h = img.height;
+      if(w > MAX_W){h = Math.round(h * MAX_W / w); w = MAX_W;}
+      canvas.width = w; canvas.height = h;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0,0,w,h); // 透明PNG转JPEG时填充白色背景
+      ctx.drawImage(img,0,0,w,h);
+      // 统一输出 JPEG，兼容性最好
+      const dataUrl = canvas.toDataURL('image/jpeg',0.85);
+      URL.revokeObjectURL(url); // canvas处理完成后再释放，避免某些浏览器提前回收位图
+      if(!dataUrl || dataUrl.length < 100){
+        reject(new Error('canvas输出为空'));
+        return;
+      }
+      resolve(dataUrl);
+    };
+    img.onerror = function(){
+      URL.revokeObjectURL(url);
+      reject(new Error('图片加载失败，格式可能不支持'));
+    };
+    img.src = url;
+  });
+}
+
+function fileToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = e=>resolve(e.target.result);
+    reader.onerror = ()=>reject(new Error('文件读取失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+// 清理 base64 数据：去掉可能的换行符，确保HTML属性安全
+function cleanBase64(str){
+  if(!str) return '';
+  return str.replace(/\s+/g,'');
+}
+
+function buildStandaloneHTML(data){
+  const imagesHTML = data.images.map((src,i)=>`<div class="s" style="transform:translateX(${i*100}%)"><img src="${escAttr(src)}"></div>`).join('');
+  const dotsHTML = data.images.map((_,i)=>`<b class="${i===0?'a':''}"></b>`).join('');
+  const tagsHTML = data.tags.map(t=>`<span>#${t}</span>`).join('');
+  
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>小红书笔记预览</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:20px}
+.p{width:360px;background:#fff;border-radius:36px;box-shadow:0 8px 32px rgba(0,0,0,.15);overflow:hidden;border:8px solid #1a1a1a}
+.ph{height:44px;background:#fff;display:flex;align-items:center;justify-content:center;position:relative;padding:0 16px}
+.ph .t{font-size:14px;font-weight:600;color:#000;position:absolute;left:28px}
+.ph .n{width:120px;height:24px;background:#1a1a1a;border-radius:0 0 16px 16px;position:absolute;top:0;left:50%;transform:translateX(-50%)}
+.ph .i{position:absolute;right:16px;display:flex;gap:4px;align-items:center;font-size:12px}
+.ub{padding:10px 14px;display:flex;align-items:center;gap:10px;background:#fff}
+.ub .av{width:36px;height:36px;border-radius:50%;background:#EE822F;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:bold}
+.ub .in{flex:1}.ub .nm{font-size:14px;font-weight:600;color:#333}.ub .mt{font-size:12px;color:#999}
+.ub .fl{border:1px solid #EE822F;color:#EE822F;padding:5px 14px;border-radius:16px;font-size:13px;font-weight:500}
+.c{position:relative;width:100%;height:420px;overflow:hidden;background:#f8f8f8}
+.c .tr{display:flex;height:100%;transition:transform .3s}.c .s{min-width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+.c .s img{max-width:100%;max-height:100%;object-fit:contain}
+.c .d{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:6px}
+.c .d b{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.5);display:inline-block}
+.c .d b.a{background:#fff}
+.c .np,.c .nn{position:absolute;top:50%;transform:translateY(-50%);width:32px;height:32px;background:rgba(0,0,0,.3);color:#fff;border:none;border-radius:50%;cursor:pointer;font-size:16px;opacity:0;transition:.2s}
+.c:hover .np,.c:hover .nn{opacity:1}.c .np{left:8px}.c .nn{right:8px}
+.cp{padding:14px;background:#fff}.cp .tl{font-size:16px;font-weight:600;color:#333;line-height:1.5;margin-bottom:8px}
+.cp .tx{font-size:14px;color:#444;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+.cp .tg{margin-top:10px}.cp .tg span{color:#3c6e9e;font-size:14px;margin-right:8px}
+.db{padding:10px 14px;font-size:12px;color:#999;background:#fff;border-top:1px solid #f5f5f5}
+.ac{padding:10px 14px;display:flex;justify-content:space-around;background:#fff;border-top:1px solid #f5f5f5}
+.ac .it{display:flex;align-items:center;gap:5px;color:#666;font-size:13px}
+.ac .it svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8}
+.pf{height:34px;background:#fff;display:flex;align-items:center;justify-content:center;padding-bottom:4px}
+.pf .br{width:120px;height:4px;background:#1a1a1a;border-radius:2px}
+</style></head><body>
+<div class="p">
+<div class="ph"><span class="t">9:41</span><div class="n"></div><div class="i"><span>5G</span><span>100%</span></div></div>
+<div class="ub"><div class="av">${data.nickname.slice(0,1)}</div><div class="in"><div class="nm">${esc(data.nickname)}</div><div class="mt">${esc(data.time)}</div></div><div class="fl">+ 关注</div></div>
+<div class="c" id="cr"><div class="tr" id="tr">${imagesHTML}</div><div class="d" id="dt">${dotsHTML}</div><button class="np" onclick="ps()">&#8249;</button><button class="nn" onclick="ns()">&#8250;</button></div>
+<div class="ac">
+<div class="it"><svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg><span>${esc(data.likes)}</span></div>
+<div class="it"><svg viewBox="0 0 24 24"><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z"/></svg><span>${esc(data.comments)}</span></div>
+<div class="it"><svg viewBox="0 0 24 24"><path d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg><span>${esc(data.saves)}</span></div>
+<div class="it"><svg viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg></div>
+</div>
+<div class="cp"><div class="tl">${esc(data.title)}</div><div class="tx">${esc(data.content)}</div><div class="tg">${tagsHTML}</div></div>
+<div class="db">编辑于 ${esc(data.time)}</div>
+<div class="pf"><div class="br"></div></div>
+</div>
+<script>
+var ci=0,total=${data.images.length},tr=document.getElementById('tr'),dt=document.getElementById('dt');
+function go(i){ci=Math.max(0,Math.min(i,total-1));tr.style.transform='translateX(-'+ci*100+'%)';updateDots()}
+function updateDots(){var bs=dt.querySelectorAll('b');bs.forEach(function(b,j){b.className=j===ci?'a':''})}
+function ps(){go(ci-1)}function ns(){go(ci+1)}
+var sx,ex;document.getElementById('cr').addEventListener('touchstart',function(e){sx=e.touches[0].clientX});
+document.getElementById('cr').addEventListener('touchend',function(e){ex=e.changedTouches[0].clientX;if(sx-ex>50)ns();if(ex-sx>50)ps()});
+<\/script>
+</body></html>`;
+}
+
+function esc(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]))}
+function escAttr(s){return s.replace(/["&]/g,c=>({'"':'&quot;','&':'&amp;'}[c]))}
+
+// ===== 生成分享链接（URL hash 编码）=====
+async function generateShareLink(){
+  if(!images.length && !document.getElementById('titleInput').value){
+    alert('请至少上传一张图片或填写标题');
+    return null;
+  }
+
+  const btn = document.getElementById('reviewBtn');
+  const originalText = btn.textContent;
+  btn.textContent = '生成链接中...';
+  btn.disabled = true;
+
+  try {
+    // 压缩图片
+    const compressedImages = [];
+    for(let i=0;i<images.length;i++){
+      btn.textContent = '压缩图片 ('+(i+1)+'/'+images.length+')...';
+      try {
+        const c = await compressImage(images[i].file);
+        compressedImages.push(cleanBase64(c));
+      } catch(err){
+        const raw = await fileToBase64(images[i].file);
+        compressedImages.push(cleanBase64(raw));
+      }
+    }
+
+    const data = {
+      nickname: document.getElementById('nickname').value,
+      time: document.getElementById('postTime').value,
+      title: document.getElementById('titleInput').value,
+      content: document.getElementById('contentInput').value,
+      likes: document.getElementById('likes').value,
+      comments: document.getElementById('comments').value,
+      saves: document.getElementById('saves').value,
+      tags: [...tags],
+      images: compressedImages,
+      _ts: Date.now()
+    };
+
+    const json = JSON.stringify(data);
+    const encoded = encodeURIComponent(json);
+
+    // Chrome URL 长度限制约 2MB，留 500KB 余量给域名和路径
+    if(encoded.length > 1500000){
+      alert('图片内容太大，无法生成分享链接（限制约1.5MB）。\n\n建议：\n1. 减少图片数量\n2. 先用图片压缩工具处理后再上传\n3. 或使用下方的"导出送审文件"功能');
+      return null;
+    }
+
+    const baseUrl = location.href.split('#')[0];
+    const shareUrl = baseUrl + '#share=' + encoded;
+
+    // 尝试复制到剪贴板
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      alert('分享链接已复制到剪贴板！\n直接发给领导即可，打开就能看到完整效果（包括滑动图片）。');
+    } catch(e){
+      // 如果复制失败，提示用户手动复制
+      prompt('请复制以下链接发给领导：', shareUrl);
+    }
+    return shareUrl;
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
+// 从 URL hash 恢复数据
+function loadFromHash(){
+  if(!location.hash.startsWith('#share=')) return false;
+  try {
+    const encoded = location.hash.slice(7); // 去掉 '#share='
+    const json = decodeURIComponent(encoded);
+    const data = JSON.parse(json);
+
+    // 恢复数据到表单
+    if(data.nickname) document.getElementById('nickname').value = data.nickname;
+    if(data.time) document.getElementById('postTime').value = data.time;
+    if(data.title) document.getElementById('titleInput').value = data.title;
+    if(data.content) document.getElementById('contentInput').value = data.content;
+    if(data.likes) document.getElementById('likes').value = data.likes;
+    if(data.comments) document.getElementById('comments').value = data.comments;
+    if(data.saves) document.getElementById('saves').value = data.saves;
+    if(data.tags) tags = data.tags;
+
+    // 恢复图片（此时已经是 base64 data URL，不需要 File 对象）
+    images = (data.images || []).map(url => ({url, file: null}));
+    currentSlide = 0;
+
+    // 更新UI
+    renderTags();
+    updatePreview();
+    renderThumbs();
+    renderCarousel();
+
+    return true;
+  } catch(e){
+    console.error('从链接恢复数据失败:', e);
+    return false;
+  }
+}
+
+// ===== 送审模式切换 =====
+function enterReviewMode(){
+  document.body.classList.add('readonly');
+  document.title = '小红书笔记预览 — 送审版';
+  if(location.hash !== '#readonly' && !location.hash.startsWith('#share=')){
+    history.replaceState(null,'','#readonly');
+  }
+}
+function exitReviewMode(){
+  document.body.classList.remove('readonly');
+  document.title = '小红书笔记预览工具';
+  if(location.hash === '#readonly' || location.hash.startsWith('#share=')){
+    history.replaceState(null,'',location.pathname+location.search);
+  }
+}
+
+document.getElementById('reviewBtn').addEventListener('click', async function(){
+  // 优先尝试生成分享链接，如果数据太大则仅切换UI
+  const shareUrl = await generateShareLink();
+  if(shareUrl){
+    // 链接生成成功，同时进入只读模式
+    enterReviewMode();
+  } else {
+    // 数据太大或其他原因，仅切换UI，提示用导出HTML
+    enterReviewMode();
+    alert('已切换为送审预览模式。\n\n由于图片较多，分享链接无法生成。\n请点击"导出送审文件"按钮下载HTML文件发给领导。');
+  }
+});
+document.getElementById('editBtn').addEventListener('click', exitReviewMode);
+
+// 页面加载时：先尝试从 hash 恢复数据，再检测 #readonly
+if(location.hash.startsWith('#share=')){
+  if(loadFromHash()){
+    enterReviewMode();
+  }
+} else if(location.hash === '#readonly'){
+  enterReviewMode();
+}
+
+// 初始化
+renderTags();
+updatePreview();
+renderCarousel();
+</script>
+</body>
+</html>!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小红书笔记预览工具</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;min-height:100vh}
+.container{display:flex;gap:20px;max-width:1200px;margin:0 auto;padding:20px}
+/* 编辑区 */
+.editor{flex:1;min-width:320px;max-width:480px;background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.editor h2{font-size:18px;margin-bottom:16px;color:#333}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:13px;color:#666;margin-bottom:5px;font-weight:500}
+.form-group input,.form-group textarea,.form-group select{width:100%;padding:10px 12px;border:1px solid #e0e0e0;border-radius:8px;font-size:14px;transition:border .2s}
+.form-group input:focus,.form-group textarea:focus{border-color:#EE822F;outline:none}
+.form-group textarea{min-height:80px;resize:vertical}
+.upload-area{border:2px dashed #ddd;border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:.2s}
+.upload-area:hover{border-color:#EE822F;background:#fff8f3}
+.upload-area.dragover{border-color:#EE822F;background:#fff0e6}
+.upload-area p{color:#999;font-size:13px}
+.thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.thumb{width:60px;height:60px;border-radius:6px;object-fit:cover;border:2px solid transparent;cursor:pointer;position:relative}
+.thumb.active{border-color:#EE822F}
+.thumb .del{position:absolute;top:-6px;right:-6px;width:18px;height:18px;background:#ff4d4f;color:#fff;border-radius:50%;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.tag{background:#fff2e8;color:#EE822F;padding:4px 10px;border-radius:12px;font-size:12px;display:flex;align-items:center;gap:4px}
+.tag .remove{cursor:pointer;font-weight:bold}
+.tag-input{width:100px;border:none;border-bottom:1px solid #ddd;padding:4px;font-size:13px}
+.btn-group{display:flex;gap:10px;margin-top:16px}
+.btn{flex:1;padding:12px;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-weight:500;transition:.2s}
+.btn-primary{background:#EE822F;color:#fff}
+.btn-primary:hover{background:#d66f1f}
+.btn-secondary{background:#f0f0f0;color:#333}
+.btn-secondary:hover{background:#e0e0e0}
+
+/* 预览区 */
+.preview{flex:1;display:flex;justify-content:center;align-items:flex-start;padding-top:10px}
+.phone{width:360px;background:#fff;border-radius:36px;box-shadow:0 8px 32px rgba(0,0,0,.15);overflow:hidden;border:8px solid #1a1a1a;position:relative}
+.phone-header{height:44px;background:#fff;display:flex;align-items:center;justify-content:center;position:relative;padding:0 16px}
+.phone-header .time{font-size:14px;font-weight:600;color:#000;position:absolute;left:28px}
+.phone-header .notch{width:120px;height:24px;background:#1a1a1a;border-radius:0 0 16px 16px;position:absolute;top:0;left:50%;transform:translateX(-50%)}
+.phone-header .icons{position:absolute;right:16px;display:flex;gap:4px;align-items:center}
+.phone-header .icons span{font-size:12px}
+.user-bar{padding:10px 14px;display:flex;align-items:center;gap:10px;background:#fff}
+.user-bar .avatar{width:36px;height:36px;border-radius:50%;background:#EE822F;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:bold}
+.user-bar .info{flex:1}
+.user-bar .name{font-size:14px;font-weight:600;color:#333}
+.user-bar .meta{font-size:12px;color:#999;margin-top:1px}
+.user-bar .follow{border:1px solid #EE822F;color:#EE822F;padding:5px 14px;border-radius:16px;font-size:13px;font-weight:500}
+
+.carousel{position:relative;width:100%;height:420px;overflow:hidden;background:#f8f8f8}
+.carousel-track{display:flex;height:100%;transition:transform .3s}
+.carousel-slide{min-width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+.carousel-slide img{max-width:100%;max-height:100%;object-fit:contain}
+.carousel-dots{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:6px}
+.carousel-dots .dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.5)}
+.carousel-dots .dot.active{background:#fff}
+.carousel-dots .dot.count{background:#EE822F;color:#fff;font-size:10px;padding:2px 6px;width:auto;height:auto;border-radius:10px;display:flex;align-items:center}
+.carousel-nav{position:absolute;top:50%;transform:translateY(-50%);width:32px;height:32px;background:rgba(0,0,0,.3);color:#fff;border:none;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;opacity:0;transition:.2s}
+.carousel:hover .carousel-nav{opacity:1}
+.carousel-nav.prev{left:8px}
+.carousel-nav.next{right:8px}
+
+.content{padding:14px;background:#fff}
+.content .title{font-size:16px;font-weight:600;color:#333;line-height:1.5;margin-bottom:8px}
+.content .text{font-size:14px;color:#444;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+.content .text.collapsed{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.content .expand{color:#999;font-size:13px;margin-top:6px;cursor:pointer}
+.content .tags{margin-top:10px}
+.content .tags span{color:#3c6e9e;font-size:14px;margin-right:8px}
+
+.date-bar{padding:10px 14px;font-size:12px;color:#999;background:#fff;border-top:1px solid #f5f5f5}
+
+.actions{padding:10px 14px;display:flex;justify-content:space-around;background:#fff;border-top:1px solid #f5f5f5}
+.action-item{display:flex;align-items:center;gap:5px;color:#666;font-size:13px;cursor:pointer}
+.action-item svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8}
+.action-item.active svg{fill:#ff4d4f;stroke:#ff4d4f}
+
+.phone-footer{height:34px;background:#fff;display:flex;align-items:center;justify-content:center;gap:60px;padding-bottom:4px}
+.phone-footer .bar{width:120px;height:4px;background:#1a1a1a;border-radius:2px}
+
+/* 只读模式隐藏编辑区 */
+body.readonly .container{justify-content:center;padding-top:60px}
+body.readonly .editor{display:none}
+body.readonly .preview{flex:none}
+
+/* 送审提示条 */
+.review-bar{position:fixed;top:0;left:0;right:0;background:#EE822F;color:#fff;padding:12px 20px;display:flex;align-items:center;justify-content:center;gap:16px;z-index:1000;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,.15);transform:translateY(-100%);transition:transform .3s}
+body.readonly .review-bar{transform:translateY(0)}
+.review-bar .lock{font-size:16px}
+.review-bar .edit-btn{background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.5);color:#fff;padding:5px 14px;border-radius:16px;cursor:pointer;font-size:13px;transition:.2s}
+.review-bar .edit-btn:hover{background:rgba(255,255,255,.35)}
+
+@media(max-width:800px){
+.container{flex-direction:column;align-items:center;padding:10px}
+.editor{width:100%;max-width:none}
+.phone{width:340px}
+}
+</style>
+</head>
+<body>
+<div class="review-bar" id="reviewBar">
+  <span class="lock">🔒</span>
+  <span>送审模式 — 内容已锁定，领导仅可预览</span>
+  <button class="edit-btn" id="editBtn">✏️ 编辑模式</button>
+</div>
+
+<div class="container">
+  <!-- 编辑区 -->
+  <div class="editor">
+    <h2>内容编辑</h2>
+    <div class="form-group">
+      <label>账号昵称</label>
+      <input type="text" id="nickname" value="外研职教" placeholder="输入昵称">
+    </div>
+    <div class="form-group">
+      <label>发布时间</label>
+      <input type="text" id="postTime" value="今天 10:30" placeholder="如：今天 10:30">
+    </div>
+    <div class="form-group">
+      <label>笔记类型</label>
+      <select id="noteType">
+        <option value="image">图文笔记</option>
+        <option value="video">视频笔记</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>上传图片（支持拖拽，最多9张）</label>
+      <div class="upload-area" id="uploadArea">
+        <p>点击或拖拽图片到这里</p>
+      </div>
+      <div class="thumbs" id="thumbs"></div>
+    </div>
+    <div class="form-group">
+      <label>标题</label>
+      <input type="text" id="titleInput" value="职业院校学生如何备考VETS？" placeholder="输入标题">
+    </div>
+    <div class="form-group">
+      <label>正文</label>
+      <textarea id="contentInput" placeholder="输入正文内容">VETS（实用英语交际职业技能等级证书）考试在即，很多职业院校的同学都在问怎么高效备考。
+
+1. 先了解考试结构
+VETS分为标准版和高阶版，题型涵盖听力、阅读、写作、口语四大模块。标准版适合高职阶段，高阶版适合本科层次。
+
+2. 善用官方资源
+VETS官网提供完整题库和实训平台，建议先做完样题，熟悉题型和答题节奏。
+
+3. 注重实际应用
+VETS不是普通的英语考试，而是考察职场英语交际能力。建议结合专业场景练习，比如商务邮件、会议记录、产品介绍等。
+
+大家还有什么备考问题，欢迎在评论区留言！</textarea>
+    </div>
+    <div class="form-group">
+      <label>话题标签（回车添加）</label>
+      <div class="tags" id="tags">
+        <span class="tag">VETS<span class="remove">&times;</span></span>
+        <span class="tag">职业院校<span class="remove">&times;</span></span>
+        <span class="tag">英语备考<span class="remove">&times;</span></span>
+        <input type="text" class="tag-input" id="tagInput" placeholder="+ 添加标签">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>互动数据</label>
+      <div style="display:flex;gap:10px">
+        <input type="text" id="likes" value="1.2k" placeholder="点赞" style="flex:1">
+        <input type="text" id="comments" value="89" placeholder="评论" style="flex:1">
+        <input type="text" id="saves" value="356" placeholder="收藏" style="flex:1">
+      </div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-primary" id="exportBtn">导出送审文件</button>
+      <button class="btn btn-secondary" id="reviewBtn">🔒 送审模式</button>
+    </div>
+    <div class="btn-group" style="margin-top:8px">
+      <button class="btn btn-secondary" id="resetBtn">重置</button>
+    </div>
+  </div>
+
+  <!-- 预览区 -->
+  <div class="preview">
+    <div class="phone" id="phonePreview">
+      <div class="phone-header">
+        <span class="time">9:41</span>
+        <div class="notch"></div>
+        <div class="icons"><span>5G</span><span>100%</span></div>
+      </div>
+      <div class="user-bar">
+        <div class="avatar" id="previewAvatar">外</div>
+        <div class="info">
+          <div class="name" id="previewName">外研职教</div>
+          <div class="meta" id="previewTime">今天 10:30</div>
+        </div>
+        <div class="follow">+ 关注</div>
+      </div>
+      <div class="carousel" id="carousel">
+        <div class="carousel-track" id="carouselTrack"></div>
+        <div class="carousel-dots" id="carouselDots"></div>
+        <button class="carousel-nav prev" id="prevBtn">&#8249;</button>
+        <button class="carousel-nav next" id="nextBtn">&#8250;</button>
+      </div>
+      <div class="actions">
+        <div class="action-item" id="likeBtn">
+          <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+          <span id="previewLikes">1.2k</span>
+        </div>
+        <div class="action-item">
+          <svg viewBox="0 0 24 24"><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z"/></svg>
+          <span id="previewComments">89</span>
+        </div>
+        <div class="action-item">
+          <svg viewBox="0 0 24 24"><path d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>
+          <span id="previewSaves">356</span>
+        </div>
+        <div class="action-item">
+          <svg viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>
+        </div>
+      </div>
+      <div class="content">
+        <div class="title" id="previewTitle">职业院校学生如何备考VETS？</div>
+        <div class="text" id="previewText">VETS（实用英语交际职业技能等级证书）考试在即...</div>
+        <div class="expand" id="expandBtn" style="display:none">展开</div>
+        <div class="tags" id="previewTags">
+          <span>#VETS</span><span>#职业院校</span><span>#英语备考</span>
+        </div>
+      </div>
+      <div class="date-bar">编辑于 <span id="previewEditTime">今天 10:30</span></div>
+      <div class="phone-footer"><div class="bar"></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== 数据状态 =====
+let images = [];
+let currentSlide = 0;
+let tags = ['VETS','职业院校','英语备考'];
+
+// ===== DOM 元素 =====
+const uploadArea = document.getElementById('uploadArea');
+const thumbs = document.getElementById('thumbs');
+const carouselTrack = document.getElementById('carouselTrack');
+const carouselDots = document.getElementById('carouselDots');
+
+// ===== 事件绑定 =====
+document.getElementById('nickname').addEventListener('input', updatePreview);
+document.getElementById('postTime').addEventListener('input', updatePreview);
+document.getElementById('titleInput').addEventListener('input', updatePreview);
+document.getElementById('contentInput').addEventListener('input', updatePreview);
+document.getElementById('likes').addEventListener('input', updatePreview);
+document.getElementById('comments').addEventListener('input', updatePreview);
+document.getElementById('saves').addEventListener('input', updatePreview);
+document.getElementById('noteType').addEventListener('change', updatePreview);
+document.getElementById('prevBtn').addEventListener('click', ()=>goSlide(currentSlide-1));
+document.getElementById('nextBtn').addEventListener('click', ()=>goSlide(currentSlide+1));
+document.getElementById('likeBtn').addEventListener('click', function(){this.classList.toggle('active')});
+document.getElementById('expandBtn').addEventListener('click', function(){
+  document.getElementById('previewText').classList.remove('collapsed');
+  this.style.display='none';
+});
+document.getElementById('resetBtn').addEventListener('click', function(){
+  if(confirm('确定重置所有内容？')) location.reload();
+});
+
+// 标签输入
+document.getElementById('tagInput').addEventListener('keydown', function(e){
+  if(e.key==='Enter' && this.value.trim()){
+    tags.push(this.value.trim());
+    this.value='';
+    renderTags();
+    updatePreview();
+  }
+});
+
+// 图片上传
+uploadArea.addEventListener('click', ()=>{
+  const input=document.createElement('input');
+  input.type='file';input.multiple=true;input.accept='image/*';
+  input.onchange=e=>handleFiles(e.target.files);
+  input.click();
+});
+uploadArea.addEventListener('dragover', e=>{e.preventDefault();uploadArea.classList.add('dragover')});
+uploadArea.addEventListener('dragleave', ()=>uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop', e=>{
+  e.preventDefault();
+  uploadArea.classList.remove('dragover');
+  handleFiles(e.dataTransfer.files);
+});
+
+function handleFiles(files){
+  [...files].forEach(file=>{
+    if(!file.type.startsWith('image/')) return;
+    if(images.length>=9) return alert('最多9张图片');
+    const url = URL.createObjectURL(file);
+    images.push({url, file});
+  });
+  renderThumbs();
+  renderCarousel();
+  updatePreview();
+}
+
+function renderThumbs(){
+  thumbs.innerHTML = images.map((img,i)=>`
+    <img class="thumb${i===currentSlide?' active':''}" src="${img.url}" onclick="selectSlide(${i})">
+    <span class="del" onclick="removeImage(${i})">×</span>
+  `).join('');
+}
+
+function renderCarousel(){
+  carouselTrack.innerHTML = images.length?
+    images.map(img=>`<div class="carousel-slide"><img src="${img.url}"></div>`).join(''):
+    '<div class="carousel-slide"><div style="color:#ccc;font-size:14px">点击左侧上传图片</div></div>';
+  renderDots();
+  goSlide(0);
+}
+
+function renderDots(){
+  if(!images.length){carouselDots.innerHTML='';return}
+  carouselDots.innerHTML = images.map((_,i)=>
+    `<div class="dot${i===currentSlide?' active':''}"></div>`
+  ).join('');
+}
+
+function selectSlide(i){goSlide(i)}
+function goSlide(i){
+  if(!images.length) return;
+  currentSlide = Math.max(0,Math.min(i,images.length-1));
+  carouselTrack.style.transform = `translateX(-${currentSlide*100}%)`;
+  renderDots();
+  renderThumbs();
+}
+function removeImage(i){
+  URL.revokeObjectURL(images[i].url);
+  images.splice(i,1);
+  if(currentSlide>=images.length) currentSlide=Math.max(0,images.length-1);
+  renderThumbs();renderCarousel();
+}
+
+function renderTags(){
+  const container = document.getElementById('tags');
+  container.innerHTML = tags.map((t,i)=>`<span class="tag">${t}<span class="remove" onclick="removeTag(${i})">&times;</span></span>`).join('') +
+    '<input type="text" class="tag-input" id="tagInput" placeholder="+ 添加标签">';
+  document.getElementById('tagInput').addEventListener('keydown', function(e){
+    if(e.key==='Enter' && this.value.trim()){
+      tags.push(this.value.trim());
+      renderTags();
+      updatePreview();
+    }
+  });
+}
+window.removeTag = function(i){tags.splice(i,1);renderTags();updatePreview()}
+
+function updatePreview(){
+  document.getElementById('previewName').textContent = document.getElementById('nickname').value;
+  document.getElementById('previewTime').textContent = document.getElementById('postTime').value;
+  document.getElementById('previewAvatar').textContent = document.getElementById('nickname').value.slice(0,1);
+  document.getElementById('previewTitle').textContent = document.getElementById('titleInput').value;
+  document.getElementById('previewText').textContent = document.getElementById('contentInput').value;
+  document.getElementById('previewLikes').textContent = document.getElementById('likes').value;
+  document.getElementById('previewComments').textContent = document.getElementById('comments').value;
+  document.getElementById('previewSaves').textContent = document.getElementById('saves').value;
+  document.getElementById('previewEditTime').textContent = document.getElementById('postTime').value;
+  document.getElementById('previewTags').innerHTML = tags.map(t=>`<span>#${t}</span>`).join('');
+  
+  // 展开按钮
+  const text = document.getElementById('previewText');
+  const expand = document.getElementById('expandBtn');
+  text.classList.add('collapsed');
+  expand.style.display = document.getElementById('contentInput').value.length>80?'block':'none';
+}
+
+// ===== 导出送审文件 =====
+document.getElementById('exportBtn').addEventListener('click', exportForReview);
+
+async function exportForReview(){
+  if(!images.length && !document.getElementById('titleInput').value){
+    alert('请至少上传一张图片或填写标题');
+    return;
+  }
+
+  const exportBtn = document.getElementById('exportBtn');
+  exportBtn.textContent = '处理图片 (0/'+images.length+')...';
+  exportBtn.disabled = true;
+
+  try {
+    // 逐个处理图片，单张失败不中断整体流程
+    const results = [];
+    const failed = [];
+    for(let i=0;i<images.length;i++){
+      exportBtn.textContent = '处理图片 ('+(i+1)+'/'+images.length+')...';
+      const img = images[i];
+      try {
+        // 先检测是否为HEIC等不兼容格式
+        if(img.file.type === 'image/heic' || img.file.type === 'image/heif' || img.file.name.toLowerCase().endsWith('.heic')){
+          throw new Error('HEIC格式不被支持，请转换为JPG/PNG后重新上传');
+        }
+        const compressed = await compressImage(img.file);
+        results.push(cleanBase64(compressed));
+      } catch(err){
+        console.error('图片'+(i+1)+'处理失败:', err);
+        failed.push({index:i+1, name:img.file.name, error:err.message});
+        // 尝试回退：直接读原文件
+        try {
+          const raw = await fileToBase64(img.file);
+          results.push(cleanBase64(raw));
+          failed[failed.length-1].recovered = true;
+        } catch(e2){
+          // 彻底失败，跳过这张图
+        }
+      }
+    }
+
+    if(failed.length > 0 && !failed.every(f=>f.recovered)){
+      const unrecovered = failed.filter(f=>!f.recovered);
+      const msg = unrecovered.map(f=>'第'+f.index+'张('+f.name+'): '+f.error).join('\n');
+      if(!confirm('以下图片处理失败，将跳过这些图片继续生成：\n'+msg+'\n\n是否继续？')){
+        exportBtn.textContent = '导出送审文件';
+        exportBtn.disabled = false;
+        return;
+      }
+    }
+
+    exportBtn.textContent = '打包中...';
+
+    // 估算文件大小
+    const totalSize = results.reduce((sum,s)=>sum+s.length,0);
+    if(totalSize > 6*1024*1024){
+      if(!confirm('图片较多，生成文件约'+Math.round(totalSize/1024/1024)+'MB，部分邮件/微信可能截断大文件。建议减少图片数量或压缩后重试。仍要继续吗？')){
+        exportBtn.textContent = '导出送审文件';
+        exportBtn.disabled = false;
+        return;
+      }
+    }
+
+    const html = buildStandaloneHTML({
+      nickname: document.getElementById('nickname').value,
+      time: document.getElementById('postTime').value,
+      title: document.getElementById('titleInput').value,
+      content: document.getElementById('contentInput').value,
+      likes: document.getElementById('likes').value,
+      comments: document.getElementById('comments').value,
+      saves: document.getElementById('saves').value,
+      tags: [...tags],
+      images: results
+    });
+
+    const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '小红书笔记预览_送审.html';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    alert('送审文件已下载！直接把这个HTML文件发给领导即可。');
+  } catch(e){
+    alert('生成失败: '+e.message);
+    console.error(e);
+  } finally {
+    exportBtn.textContent = '导出送审文件';
+    exportBtn.disabled = false;
+  }
+}
+
+// 压缩图片：限制最大宽度1200px，JPEG质量0.85，输出统一为JPEG
+function compressImage(file){
+  return new Promise((resolve,reject)=>{
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = function(){
+      // 检测图片尺寸是否有效
+      if(img.width === 0 || img.height === 0){
+        URL.revokeObjectURL(url);
+        reject(new Error('图片尺寸无效(0x0)'));
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const MAX_W = 1200;
+      let w = img.width, h = img.height;
+      if(w > MAX_W){h = Math.round(h * MAX_W / w); w = MAX_W;}
+      canvas.width = w; canvas.height = h;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0,0,w,h); // 透明PNG转JPEG时填充白色背景
+      ctx.drawImage(img,0,0,w,h);
+      // 统一输出 JPEG，兼容性最好
+      const dataUrl = canvas.toDataURL('image/jpeg',0.85);
+      URL.revokeObjectURL(url); // canvas处理完成后再释放，避免某些浏览器提前回收位图
+      if(!dataUrl || dataUrl.length < 100){
+        reject(new Error('canvas输出为空'));
+        return;
+      }
+      resolve(dataUrl);
+    };
+    img.onerror = function(){
+      URL.revokeObjectURL(url);
+      reject(new Error('图片加载失败，格式可能不支持'));
+    };
+    img.src = url;
+  });
+}
+
+function fileToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = e=>resolve(e.target.result);
+    reader.onerror = ()=>reject(new Error('文件读取失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+// 清理 base64 数据：去掉可能的换行符，确保HTML属性安全
+function cleanBase64(str){
+  if(!str) return '';
+  return str.replace(/\s+/g,'');
+}
+
+function buildStandaloneHTML(data){
+  const imagesHTML = data.images.map((src,i)=>`<div class="s" style="transform:translateX(${i*100}%)"><img src="${escAttr(src)}"></div>`).join('');
+  const dotsHTML = data.images.map((_,i)=>`<b class="${i===0?'a':''}"></b>`).join('');
+  const tagsHTML = data.tags.map(t=>`<span>#${t}</span>`).join('');
+  
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>小红书笔记预览</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:20px}
+.p{width:360px;background:#fff;border-radius:36px;box-shadow:0 8px 32px rgba(0,0,0,.15);overflow:hidden;border:8px solid #1a1a1a}
+.ph{height:44px;background:#fff;display:flex;align-items:center;justify-content:center;position:relative;padding:0 16px}
+.ph .t{font-size:14px;font-weight:600;color:#000;position:absolute;left:28px}
+.ph .n{width:120px;height:24px;background:#1a1a1a;border-radius:0 0 16px 16px;position:absolute;top:0;left:50%;transform:translateX(-50%)}
+.ph .i{position:absolute;right:16px;display:flex;gap:4px;align-items:center;font-size:12px}
+.ub{padding:10px 14px;display:flex;align-items:center;gap:10px;background:#fff}
+.ub .av{width:36px;height:36px;border-radius:50%;background:#EE822F;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:bold}
+.ub .in{flex:1}.ub .nm{font-size:14px;font-weight:600;color:#333}.ub .mt{font-size:12px;color:#999}
+.ub .fl{border:1px solid #EE822F;color:#EE822F;padding:5px 14px;border-radius:16px;font-size:13px;font-weight:500}
+.c{position:relative;width:100%;height:420px;overflow:hidden;background:#f8f8f8}
+.c .tr{display:flex;height:100%;transition:transform .3s}.c .s{min-width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+.c .s img{max-width:100%;max-height:100%;object-fit:contain}
+.c .d{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:6px}
+.c .d b{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.5);display:inline-block}
+.c .d b.a{background:#fff}
+.c .np,.c .nn{position:absolute;top:50%;transform:translateY(-50%);width:32px;height:32px;background:rgba(0,0,0,.3);color:#fff;border:none;border-radius:50%;cursor:pointer;font-size:16px;opacity:0;transition:.2s}
+.c:hover .np,.c:hover .nn{opacity:1}.c .np{left:8px}.c .nn{right:8px}
+.cp{padding:14px;background:#fff}.cp .tl{font-size:16px;font-weight:600;color:#333;line-height:1.5;margin-bottom:8px}
+.cp .tx{font-size:14px;color:#444;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+.cp .tg{margin-top:10px}.cp .tg span{color:#3c6e9e;font-size:14px;margin-right:8px}
+.db{padding:10px 14px;font-size:12px;color:#999;background:#fff;border-top:1px solid #f5f5f5}
+.ac{padding:10px 14px;display:flex;justify-content:space-around;background:#fff;border-top:1px solid #f5f5f5}
+.ac .it{display:flex;align-items:center;gap:5px;color:#666;font-size:13px}
+.ac .it svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8}
+.pf{height:34px;background:#fff;display:flex;align-items:center;justify-content:center;padding-bottom:4px}
+.pf .br{width:120px;height:4px;background:#1a1a1a;border-radius:2px}
+</style></head><body>
+<div class="p">
+<div class="ph"><span class="t">9:41</span><div class="n"></div><div class="i"><span>5G</span><span>100%</span></div></div>
+<div class="ub"><div class="av">${data.nickname.slice(0,1)}</div><div class="in"><div class="nm">${esc(data.nickname)}</div><div class="mt">${esc(data.time)}</div></div><div class="fl">+ 关注</div></div>
+<div class="c" id="cr"><div class="tr" id="tr">${imagesHTML}</div><div class="d" id="dt">${dotsHTML}</div><button class="np" onclick="ps()">&#8249;</button><button class="nn" onclick="ns()">&#8250;</button></div>
+<div class="ac">
+<div class="it"><svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg><span>${esc(data.likes)}</span></div>
+<div class="it"><svg viewBox="0 0 24 24"><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z"/></svg><span>${esc(data.comments)}</span></div>
+<div class="it"><svg viewBox="0 0 24 24"><path d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg><span>${esc(data.saves)}</span></div>
+<div class="it"><svg viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg></div>
+</div>
+<div class="cp"><div class="tl">${esc(data.title)}</div><div class="tx">${esc(data.content)}</div><div class="tg">${tagsHTML}</div></div>
+<div class="db">编辑于 ${esc(data.time)}</div>
+<div class="pf"><div class="br"></div></div>
+</div>
+<script>
+var ci=0,total=${data.images.length},tr=document.getElementById('tr'),dt=document.getElementById('dt');
+function go(i){ci=Math.max(0,Math.min(i,total-1));tr.style.transform='translateX(-'+ci*100+'%)';updateDots()}
+function updateDots(){var bs=dt.querySelectorAll('b');bs.forEach(function(b,j){b.className=j===ci?'a':''})}
+function ps(){go(ci-1)}function ns(){go(ci+1)}
+var sx,ex;document.getElementById('cr').addEventListener('touchstart',function(e){sx=e.touches[0].clientX});
+document.getElementById('cr').addEventListener('touchend',function(e){ex=e.changedTouches[0].clientX;if(sx-ex>50)ns();if(ex-sx>50)ps()});
+<\/script>
+</body></html>`;
+}
+
+function esc(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]))}
+function escAttr(s){return s.replace(/["&]/g,c=>({'"':'&quot;','&':'&amp;'}[c]))}
+
+// ===== 生成分享链接（URL hash 编码）=====
+async function generateShareLink(){
+  if(!images.length && !document.getElementById('titleInput').value){
+    alert('请至少上传一张图片或填写标题');
+    return null;
+  }
+
+  const btn = document.getElementById('reviewBtn');
+  const originalText = btn.textContent;
+  btn.textContent = '生成链接中...';
+  btn.disabled = true;
+
+  try {
+    // 压缩图片
+    const compressedImages = [];
+    for(let i=0;i<images.length;i++){
+      btn.textContent = '压缩图片 ('+(i+1)+'/'+images.length+')...';
+      try {
+        const c = await compressImage(images[i].file);
+        compressedImages.push(cleanBase64(c));
+      } catch(err){
+        const raw = await fileToBase64(images[i].file);
+        compressedImages.push(cleanBase64(raw));
+      }
+    }
+
+    const data = {
+      nickname: document.getElementById('nickname').value,
+      time: document.getElementById('postTime').value,
+      title: document.getElementById('titleInput').value,
+      content: document.getElementById('contentInput').value,
+      likes: document.getElementById('likes').value,
+      comments: document.getElementById('comments').value,
+      saves: document.getElementById('saves').value,
+      tags: [...tags],
+      images: compressedImages,
+      _ts: Date.now()
+    };
+
+    const json = JSON.stringify(data);
+    const encoded = encodeURIComponent(json);
+
+    // Chrome URL 长度限制约 2MB，留 500KB 余量给域名和路径
+    if(encoded.length > 1500000){
+      alert('图片内容太大，无法生成分享链接（限制约1.5MB）。\n\n建议：\n1. 减少图片数量\n2. 先用图片压缩工具处理后再上传\n3. 或使用下方的"导出送审文件"功能');
+      return null;
+    }
+
+    const baseUrl = location.href.split('#')[0];
+    const shareUrl = baseUrl + '#share=' + encoded;
+
+    // 尝试复制到剪贴板
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      alert('分享链接已复制到剪贴板！\n直接发给领导即可，打开就能看到完整效果（包括滑动图片）。');
+    } catch(e){
+      // 如果复制失败，提示用户手动复制
+      prompt('请复制以下链接发给领导：', shareUrl);
+    }
+    return shareUrl;
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
+// 从 URL hash 恢复数据
+function loadFromHash(){
+  if(!location.hash.startsWith('#share=')) return false;
+  try {
+    const encoded = location.hash.slice(7); // 去掉 '#share='
+    const json = decodeURIComponent(encoded);
+    const data = JSON.parse(json);
+
+    // 恢复数据到表单
+    if(data.nickname) document.getElementById('nickname').value = data.nickname;
+    if(data.time) document.getElementById('postTime').value = data.time;
+    if(data.title) document.getElementById('titleInput').value = data.title;
+    if(data.content) document.getElementById('contentInput').value = data.content;
+    if(data.likes) document.getElementById('likes').value = data.likes;
+    if(data.comments) document.getElementById('comments').value = data.comments;
+    if(data.saves) document.getElementById('saves').value = data.saves;
+    if(data.tags) tags = data.tags;
+
+    // 恢复图片（此时已经是 base64 data URL，不需要 File 对象）
+    images = (data.images || []).map(url => ({url, file: null}));
+    currentSlide = 0;
+
+    // 更新UI
+    renderTags();
+    updatePreview();
+    renderThumbs();
+    renderCarousel();
+
+    return true;
+  } catch(e){
+    console.error('从链接恢复数据失败:', e);
+    return false;
+  }
+}
+
+// ===== 送审模式切换 =====
+function enterReviewMode(){
+  document.body.classList.add('readonly');
+  document.title = '小红书笔记预览 — 送审版';
+  if(location.hash !== '#readonly' && !location.hash.startsWith('#share=')){
+    history.replaceState(null,'','#readonly');
+  }
+}
+function exitReviewMode(){
+  document.body.classList.remove('readonly');
+  document.title = '小红书笔记预览工具';
+  if(location.hash === '#readonly' || location.hash.startsWith('#share=')){
+    history.replaceState(null,'',location.pathname+location.search);
+  }
+}
+
+document.getElementById('reviewBtn').addEventListener('click', async function(){
+  // 优先尝试生成分享链接，如果数据太大则仅切换UI
+  const shareUrl = await generateShareLink();
+  if(shareUrl){
+    // 链接生成成功，同时进入只读模式
+    enterReviewMode();
+  } else {
+    // 数据太大或其他原因，仅切换UI，提示用导出HTML
+    enterReviewMode();
+    alert('已切换为送审预览模式。\n\n由于图片较多，分享链接无法生成。\n请点击"导出送审文件"按钮下载HTML文件发给领导。');
+  }
+});
+document.getElementById('editBtn').addEventListener('click', exitReviewMode);
+
+// 页面加载时：先尝试从 hash 恢复数据，再检测 #readonly
+if(location.hash.startsWith('#share=')){
+  if(loadFromHash()){
+    enterReviewMode();
+  }
+} else if(location.hash === '#readonly'){
+  enterReviewMode();
+}
+
+// 初始化
+renderTags();
+updatePreview();
+renderCarousel();
+</script>
+</body>
+</html><!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小红书笔记预览工具</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;min-height:100vh}
+.container{display:flex;gap:20px;max-width:1200px;margin:0 auto;padding:20px}
+/* 编辑区 */
+.editor{flex:1;min-width:320px;max-width:480px;background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.editor h2{font-size:18px;margin-bottom:16px;color:#333}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:13px;color:#666;margin-bottom:5px;font-weight:500}
+.form-group input,.form-group textarea,.form-group select{width:100%;padding:10px 12px;border:1px solid #e0e0e0;border-radius:8px;font-size:14px;transition:border .2s}
+.form-group input:focus,.form-group textarea:focus{border-color:#EE822F;outline:none}
+.form-group textarea{min-height:80px;resize:vertical}
+.upload-area{border:2px dashed #ddd;border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:.2s}
+.upload-area:hover{border-color:#EE822F;background:#fff8f3}
+.upload-area.dragover{border-color:#EE822F;background:#fff0e6}
+.upload-area p{color:#999;font-size:13px}
+.thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.thumb{width:60px;height:60px;border-radius:6px;object-fit:cover;border:2px solid transparent;cursor:pointer;position:relative}
+.thumb.active{border-color:#EE822F}
+.thumb .del{position:absolute;top:-6px;right:-6px;width:18px;height:18px;background:#ff4d4f;color:#fff;border-radius:50%;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.tag{background:#fff2e8;color:#EE822F;padding:4px 10px;border-radius:12px;font-size:12px;display:flex;align-items:center;gap:4px}
+.tag .remove{cursor:pointer;font-weight:bold}
+.tag-input{width:100px;border:none;border-bottom:1px solid #ddd;padding:4px;font-size:13px}
+.btn-group{display:flex;gap:10px;margin-top:16px}
+.btn{flex:1;padding:12px;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-weight:500;transition:.2s}
+.btn-primary{background:#EE822F;color:#fff}
+.btn-primary:hover{background:#d66f1f}
+.btn-secondary{background:#f0f0f0;color:#333}
+.btn-secondary:hover{background:#e0e0e0}
+
+/* 预览区 */
+.preview{flex:1;display:flex;justify-content:center;align-items:flex-start;padding-top:10px}
+.phone{width:360px;background:#fff;border-radius:36px;box-shadow:0 8px 32px rgba(0,0,0,.15);overflow:hidden;border:8px solid #1a1a1a;position:relative}
+.phone-header{height:44px;background:#fff;display:flex;align-items:center;justify-content:center;position:relative;padding:0 16px}
+.phone-header .time{font-size:14px;font-weight:600;color:#000;position:absolute;left:28px}
+.phone-header .notch{width:120px;height:24px;background:#1a1a1a;border-radius:0 0 16px 16px;position:absolute;top:0;left:50%;transform:translateX(-50%)}
+.phone-header .icons{position:absolute;right:16px;display:flex;gap:4px;align-items:center}
+.phone-header .icons span{font-size:12px}
+.user-bar{padding:10px 14px;display:flex;align-items:center;gap:10px;background:#fff}
+.user-bar .avatar{width:36px;height:36px;border-radius:50%;background:#EE822F;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:bold}
+.user-bar .info{flex:1}
+.user-bar .name{font-size:14px;font-weight:600;color:#333}
+.user-bar .meta{font-size:12px;color:#999;margin-top:1px}
+.user-bar .follow{border:1px solid #EE822F;color:#EE822F;padding:5px 14px;border-radius:16px;font-size:13px;font-weight:500}
+
+.carousel{position:relative;width:100%;height:420px;overflow:hidden;background:#f8f8f8}
+.carousel-track{display:flex;height:100%;transition:transform .3s}
+.carousel-slide{min-width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+.carousel-slide img{max-width:100%;max-height:100%;object-fit:contain}
+.carousel-dots{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:6px}
+.carousel-dots .dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.5)}
+.carousel-dots .dot.active{background:#fff}
+.carousel-dots .dot.count{background:#EE822F;color:#fff;font-size:10px;padding:2px 6px;width:auto;height:auto;border-radius:10px;display:flex;align-items:center}
+.carousel-nav{position:absolute;top:50%;transform:translateY(-50%);width:32px;height:32px;background:rgba(0,0,0,.3);color:#fff;border:none;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;opacity:0;transition:.2s}
+.carousel:hover .carousel-nav{opacity:1}
+.carousel-nav.prev{left:8px}
+.carousel-nav.next{right:8px}
+
+.content{padding:14px;background:#fff}
+.content .title{font-size:16px;font-weight:600;color:#333;line-height:1.5;margin-bottom:8px}
+.content .text{font-size:14px;color:#444;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+.content .text.collapsed{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.content .expand{color:#999;font-size:13px;margin-top:6px;cursor:pointer}
+.content .tags{margin-top:10px}
+.content .tags span{color:#3c6e9e;font-size:14px;margin-right:8px}
+
+.date-bar{padding:10px 14px;font-size:12px;color:#999;background:#fff;border-top:1px solid #f5f5f5}
+
+.actions{padding:10px 14px;display:flex;justify-content:space-around;background:#fff;border-top:1px solid #f5f5f5}
+.action-item{display:flex;align-items:center;gap:5px;color:#666;font-size:13px;cursor:pointer}
+.action-item svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8}
+.action-item.active svg{fill:#ff4d4f;stroke:#ff4d4f}
+
+.phone-footer{height:34px;background:#fff;display:flex;align-items:center;justify-content:center;gap:60px;padding-bottom:4px}
+.phone-footer .bar{width:120px;height:4px;background:#1a1a1a;border-radius:2px}
+
+/* 只读模式隐藏编辑区 */
+body.readonly .container{justify-content:center;padding-top:60px}
+body.readonly .editor{display:none}
+body.readonly .preview{flex:none}
+
+/* 送审提示条 */
+.review-bar{position:fixed;top:0;left:0;right:0;background:#EE822F;color:#fff;padding:12px 20px;display:flex;align-items:center;justify-content:center;gap:16px;z-index:1000;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,.15);transform:translateY(-100%);transition:transform .3s}
+body.readonly .review-bar{transform:translateY(0)}
+.review-bar .lock{font-size:16px}
+.review-bar .edit-btn{background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.5);color:#fff;padding:5px 14px;border-radius:16px;cursor:pointer;font-size:13px;transition:.2s}
+.review-bar .edit-btn:hover{background:rgba(255,255,255,.35)}
+
+@media(max-width:800px){
+.container{flex-direction:column;align-items:center;padding:10px}
+.editor{width:100%;max-width:none}
+.phone{width:340px}
+}
+</style>
+</head>
+<body>
+<div class="review-bar" id="reviewBar">
+  <span class="lock">🔒</span>
+  <span>送审模式 — 内容已锁定，领导仅可预览</span>
+  <button class="edit-btn" id="editBtn">✏️ 编辑模式</button>
+</div>
+
+<div class="container">
+  <!-- 编辑区 -->
+  <div class="editor">
+    <h2>内容编辑</h2>
+    <div class="form-group">
+      <label>账号昵称</label>
+      <input type="text" id="nickname" value="外研职教" placeholder="输入昵称">
+    </div>
+    <div class="form-group">
+      <label>发布时间</label>
+      <input type="text" id="postTime" value="今天 10:30" placeholder="如：今天 10:30">
+    </div>
+    <div class="form-group">
+      <label>笔记类型</label>
+      <select id="noteType">
+        <option value="image">图文笔记</option>
+        <option value="video">视频笔记</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>上传图片（支持拖拽，最多9张）</label>
+      <div class="upload-area" id="uploadArea">
+        <p>点击或拖拽图片到这里</p>
+      </div>
+      <div class="thumbs" id="thumbs"></div>
+    </div>
+    <div class="form-group">
+      <label>标题</label>
+      <input type="text" id="titleInput" value="职业院校学生如何备考VETS？" placeholder="输入标题">
+    </div>
+    <div class="form-group">
+      <label>正文</label>
+      <textarea id="contentInput" placeholder="输入正文内容">VETS（实用英语交际职业技能等级证书）考试在即，很多职业院校的同学都在问怎么高效备考。
+
+1. 先了解考试结构
+VETS分为标准版和高阶版，题型涵盖听力、阅读、写作、口语四大模块。标准版适合高职阶段，高阶版适合本科层次。
+
+2. 善用官方资源
+VETS官网提供完整题库和实训平台，建议先做完样题，熟悉题型和答题节奏。
+
+3. 注重实际应用
+VETS不是普通的英语考试，而是考察职场英语交际能力。建议结合专业场景练习，比如商务邮件、会议记录、产品介绍等。
+
+大家还有什么备考问题，欢迎在评论区留言！</textarea>
+    </div>
+    <div class="form-group">
+      <label>话题标签（回车添加）</label>
+      <div class="tags" id="tags">
+        <span class="tag">VETS<span class="remove">&times;</span></span>
+        <span class="tag">职业院校<span class="remove">&times;</span></span>
+        <span class="tag">英语备考<span class="remove">&times;</span></span>
+        <input type="text" class="tag-input" id="tagInput" placeholder="+ 添加标签">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>互动数据</label>
+      <div style="display:flex;gap:10px">
+        <input type="text" id="likes" value="1.2k" placeholder="点赞" style="flex:1">
+        <input type="text" id="comments" value="89" placeholder="评论" style="flex:1">
+        <input type="text" id="saves" value="356" placeholder="收藏" style="flex:1">
+      </div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-primary" id="exportBtn">导出送审文件</button>
+      <button class="btn btn-secondary" id="reviewBtn">🔒 送审模式</button>
+    </div>
+    <div class="btn-group" style="margin-top:8px">
+      <button class="btn btn-secondary" id="resetBtn">重置</button>
+    </div>
+  </div>
+
+  <!-- 预览区 -->
+  <div class="preview">
+    <div class="phone" id="phonePreview">
+      <div class="phone-header">
+        <span class="time">9:41</span>
+        <div class="notch"></div>
+        <div class="icons"><span>5G</span><span>100%</span></div>
+      </div>
+      <div class="user-bar">
+        <div class="avatar" id="previewAvatar">外</div>
+        <div class="info">
+          <div class="name" id="previewName">外研职教</div>
+          <div class="meta" id="previewTime">今天 10:30</div>
+        </div>
+        <div class="follow">+ 关注</div>
+      </div>
+      <div class="carousel" id="carousel">
+        <div class="carousel-track" id="carouselTrack"></div>
+        <div class="carousel-dots" id="carouselDots"></div>
+        <button class="carousel-nav prev" id="prevBtn">&#8249;</button>
+        <button class="carousel-nav next" id="nextBtn">&#8250;</button>
+      </div>
+      <div class="actions">
+        <div class="action-item" id="likeBtn">
+          <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+          <span id="previewLikes">1.2k</span>
+        </div>
+        <div class="action-item">
+          <svg viewBox="0 0 24 24"><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z"/></svg>
+          <span id="previewComments">89</span>
+        </div>
+        <div class="action-item">
+          <svg viewBox="0 0 24 24"><path d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>
+          <span id="previewSaves">356</span>
+        </div>
+        <div class="action-item">
+          <svg viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>
+        </div>
+      </div>
+      <div class="content">
+        <div class="title" id="previewTitle">职业院校学生如何备考VETS？</div>
+        <div class="text" id="previewText">VETS（实用英语交际职业技能等级证书）考试在即...</div>
+        <div class="expand" id="expandBtn" style="display:none">展开</div>
+        <div class="tags" id="previewTags">
+          <span>#VETS</span><span>#职业院校</span><span>#英语备考</span>
+        </div>
+      </div>
+      <div class="date-bar">编辑于 <span id="previewEditTime">今天 10:30</span></div>
+      <div class="phone-footer"><div class="bar"></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== 数据状态 =====
+let images = [];
+let currentSlide = 0;
+let tags = ['VETS','职业院校','英语备考'];
+
+// ===== DOM 元素 =====
+const uploadArea = document.getElementById('uploadArea');
+const thumbs = document.getElementById('thumbs');
+const carouselTrack = document.getElementById('carouselTrack');
+const carouselDots = document.getElementById('carouselDots');
+
+// ===== 事件绑定 =====
+document.getElementById('nickname').addEventListener('input', updatePreview);
+document.getElementById('postTime').addEventListener('input', updatePreview);
+document.getElementById('titleInput').addEventListener('input', updatePreview);
+document.getElementById('contentInput').addEventListener('input', updatePreview);
+document.getElementById('likes').addEventListener('input', updatePreview);
+document.getElementById('comments').addEventListener('input', updatePreview);
+document.getElementById('saves').addEventListener('input', updatePreview);
+document.getElementById('noteType').addEventListener('change', updatePreview);
+document.getElementById('prevBtn').addEventListener('click', ()=>goSlide(currentSlide-1));
+document.getElementById('nextBtn').addEventListener('click', ()=>goSlide(currentSlide+1));
+document.getElementById('likeBtn').addEventListener('click', function(){this.classList.toggle('active')});
+document.getElementById('expandBtn').addEventListener('click', function(){
+  document.getElementById('previewText').classList.remove('collapsed');
+  this.style.display='none';
+});
+document.getElementById('resetBtn').addEventListener('click', function(){
+  if(confirm('确定重置所有内容？')) location.reload();
+});
+
+// 标签输入
+document.getElementById('tagInput').addEventListener('keydown', function(e){
+  if(e.key==='Enter' && this.value.trim()){
+    tags.push(this.value.trim());
+    this.value='';
+    renderTags();
+    updatePreview();
+  }
+});
+
+// 图片上传
+uploadArea.addEventListener('click', ()=>{
+  const input=document.createElement('input');
+  input.type='file';input.multiple=true;input.accept='image/*';
+  input.onchange=e=>handleFiles(e.target.files);
+  input.click();
+});
+uploadArea.addEventListener('dragover', e=>{e.preventDefault();uploadArea.classList.add('dragover')});
+uploadArea.addEventListener('dragleave', ()=>uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop', e=>{
+  e.preventDefault();
+  uploadArea.classList.remove('dragover');
+  handleFiles(e.dataTransfer.files);
+});
+
+function handleFiles(files){
+  [...files].forEach(file=>{
+    if(!file.type.startsWith('image/')) return;
+    if(images.length>=9) return alert('最多9张图片');
+    const url = URL.createObjectURL(file);
+    images.push({url, file});
+  });
+  renderThumbs();
+  renderCarousel();
+  updatePreview();
+}
+
+function renderThumbs(){
+  thumbs.innerHTML = images.map((img,i)=>`
+    <img class="thumb${i===currentSlide?' active':''}" src="${img.url}" onclick="selectSlide(${i})">
+    <span class="del" onclick="removeImage(${i})">×</span>
+  `).join('');
+}
+
+function renderCarousel(){
+  carouselTrack.innerHTML = images.length?
+    images.map(img=>`<div class="carousel-slide"><img src="${img.url}"></div>`).join(''):
+    '<div class="carousel-slide"><div style="color:#ccc;font-size:14px">点击左侧上传图片</div></div>';
+  renderDots();
+  goSlide(0);
+}
+
+function renderDots(){
+  if(!images.length){carouselDots.innerHTML='';return}
+  carouselDots.innerHTML = images.map((_,i)=>
+    `<div class="dot${i===currentSlide?' active':''}"></div>`
+  ).join('');
+}
+
+function selectSlide(i){goSlide(i)}
+function goSlide(i){
+  if(!images.length) return;
+  currentSlide = Math.max(0,Math.min(i,images.length-1));
+  carouselTrack.style.transform = `translateX(-${currentSlide*100}%)`;
+  renderDots();
+  renderThumbs();
+}
+function removeImage(i){
+  URL.revokeObjectURL(images[i].url);
+  images.splice(i,1);
+  if(currentSlide>=images.length) currentSlide=Math.max(0,images.length-1);
+  renderThumbs();renderCarousel();
+}
+
+function renderTags(){
+  const container = document.getElementById('tags');
+  container.innerHTML = tags.map((t,i)=>`<span class="tag">${t}<span class="remove" onclick="removeTag(${i})">&times;</span></span>`).join('') +
+    '<input type="text" class="tag-input" id="tagInput" placeholder="+ 添加标签">';
+  document.getElementById('tagInput').addEventListener('keydown', function(e){
+    if(e.key==='Enter' && this.value.trim()){
+      tags.push(this.value.trim());
+      renderTags();
+      updatePreview();
+    }
+  });
+}
+window.removeTag = function(i){tags.splice(i,1);renderTags();updatePreview()}
+
+function updatePreview(){
+  document.getElementById('previewName').textContent = document.getElementById('nickname').value;
+  document.getElementById('previewTime').textContent = document.getElementById('postTime').value;
+  document.getElementById('previewAvatar').textContent = document.getElementById('nickname').value.slice(0,1);
+  document.getElementById('previewTitle').textContent = document.getElementById('titleInput').value;
+  document.getElementById('previewText').textContent = document.getElementById('contentInput').value;
+  document.getElementById('previewLikes').textContent = document.getElementById('likes').value;
+  document.getElementById('previewComments').textContent = document.getElementById('comments').value;
+  document.getElementById('previewSaves').textContent = document.getElementById('saves').value;
+  document.getElementById('previewEditTime').textContent = document.getElementById('postTime').value;
+  document.getElementById('previewTags').innerHTML = tags.map(t=>`<span>#${t}</span>`).join('');
+  
+  // 展开按钮
+  const text = document.getElementById('previewText');
+  const expand = document.getElementById('expandBtn');
+  text.classList.add('collapsed');
+  expand.style.display = document.getElementById('contentInput').value.length>80?'block':'none';
+}
+
+// ===== 导出送审文件 =====
+document.getElementById('exportBtn').addEventListener('click', exportForReview);
+
+async function exportForReview(){
+  if(!images.length && !document.getElementById('titleInput').value){
+    alert('请至少上传一张图片或填写标题');
+    return;
+  }
+
+  const exportBtn = document.getElementById('exportBtn');
+  exportBtn.textContent = '处理图片 (0/'+images.length+')...';
+  exportBtn.disabled = true;
+
+  try {
+    // 逐个处理图片，单张失败不中断整体流程
+    const results = [];
+    const failed = [];
+    for(let i=0;i<images.length;i++){
+      exportBtn.textContent = '处理图片 ('+(i+1)+'/'+images.length+')...';
+      const img = images[i];
+      try {
+        // 先检测是否为HEIC等不兼容格式
+        if(img.file.type === 'image/heic' || img.file.type === 'image/heif' || img.file.name.toLowerCase().endsWith('.heic')){
+          throw new Error('HEIC格式不被支持，请转换为JPG/PNG后重新上传');
+        }
+        const compressed = await compressImage(img.file);
+        results.push(cleanBase64(compressed));
+      } catch(err){
+        console.error('图片'+(i+1)+'处理失败:', err);
+        failed.push({index:i+1, name:img.file.name, error:err.message});
+        // 尝试回退：直接读原文件
+        try {
+          const raw = await fileToBase64(img.file);
+          results.push(cleanBase64(raw));
+          failed[failed.length-1].recovered = true;
+        } catch(e2){
+          // 彻底失败，跳过这张图
+        }
+      }
+    }
+
+    if(failed.length > 0 && !failed.every(f=>f.recovered)){
+      const unrecovered = failed.filter(f=>!f.recovered);
+      const msg = unrecovered.map(f=>'第'+f.index+'张('+f.name+'): '+f.error).join('\n');
+      if(!confirm('以下图片处理失败，将跳过这些图片继续生成：\n'+msg+'\n\n是否继续？')){
+        exportBtn.textContent = '导出送审文件';
+        exportBtn.disabled = false;
+        return;
+      }
+    }
+
+    exportBtn.textContent = '打包中...';
+
+    // 估算文件大小
+    const totalSize = results.reduce((sum,s)=>sum+s.length,0);
+    if(totalSize > 6*1024*1024){
+      if(!confirm('图片较多，生成文件约'+Math.round(totalSize/1024/1024)+'MB，部分邮件/微信可能截断大文件。建议减少图片数量或压缩后重试。仍要继续吗？')){
+        exportBtn.textContent = '导出送审文件';
+        exportBtn.disabled = false;
+        return;
+      }
+    }
+
+    const html = buildStandaloneHTML({
+      nickname: document.getElementById('nickname').value,
+      time: document.getElementById('postTime').value,
+      title: document.getElementById('titleInput').value,
+      content: document.getElementById('contentInput').value,
+      likes: document.getElementById('likes').value,
+      comments: document.getElementById('comments').value,
+      saves: document.getElementById('saves').value,
+      tags: [...tags],
+      images: results
+    });
+
+    const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '小红书笔记预览_送审.html';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    alert('送审文件已下载！直接把这个HTML文件发给领导即可。');
+  } catch(e){
+    alert('生成失败: '+e.message);
+    console.error(e);
+  } finally {
+    exportBtn.textContent = '导出送审文件';
+    exportBtn.disabled = false;
+  }
+}
+
+// 压缩图片：限制最大宽度1200px，JPEG质量0.85，输出统一为JPEG
+function compressImage(file){
+  return new Promise((resolve,reject)=>{
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = function(){
       URL.revokeObjectURL(url);
       // 检测图片尺寸是否有效
       if(img.width === 0 || img.height === 0){
